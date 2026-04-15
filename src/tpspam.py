@@ -2,6 +2,8 @@ import numpy as np
 import os
 import math
 
+import re
+
 TAILLE_MIN_MOT = 3
 EPSILON = 1
 
@@ -20,8 +22,11 @@ def lireMail(fichier: str, dictionnaire: list) -> np.ndarray :
 	"""
 	f = open(fichier, "r",encoding="ascii", errors="surrogateescape")
 
+	texte = f.read().upper()
+	mots = re.findall(r'\b[A-Z]+\b', texte) # cela ignore la ponctuation
+
 	# On extrait les mots du mail :
-	mots = [mot.upper() for mot in f.read().split(" ")] # Mise en MAJ pour insensiblité à la casse
+	#mots = [mot.upper() for mot in f.read().split(" ")] # Mise en MAJ pour insensiblité à la casse
 
 	# Construction du vecteur :
 	x = np.isin(dictionnaire, mots) 
@@ -42,9 +47,10 @@ def charge_dico(fichier: str) -> list:
 		list: La liste de tous les mots du dictionnaire.
 	"""
 	f = open(fichier, "r")
+	texte = f.read().upper()
 
 	# On extrait les mots de 3 lettres au moins :
-	mots = [mot.upper() for mot in f.read().split("\n") if len(mot) >= TAILLE_MIN_MOT] # Mise en MAJ pour insensibilité à la casse
+	mots = [mot for mot in re.findall(r'\b[A-Z]+\b', texte) if len(mot) >= TAILLE_MIN_MOT] # Mise en MAJ pour insensibilité à la casse
 
 	print("Chargé " + str(len(mots)) + " mots dans le dictionnaire")
 	f.close()
@@ -70,11 +76,11 @@ def apprendBinomial(dossier: str, fichiers: list, dictionnaire: list) -> np.ndar
 		# On accumule dans b les vecteurs (comme True = 1, on compte enft le nombre de fichier où apparait chaque mot du dictionnaire)
 		b += lireMail(dossier + '/' + fichier, dictionnaire)
 
-	return b / N
+	# on utilise epsilon pour eviter que log soit 0
+	return (b + EPSILON) / (N + 2 * EPSILON)
 
 
-
-def prediction(x: np.ndarray, Pspam: float, Pham: float, bspam: np.ndarray, bham: np.ndarray) ->bool:
+def prediction(x: np.ndarray, Pspam: float, Pham: float, bspam: np.ndarray, bham: np.ndarray) -> tuple[bool, float, float]:
 	"""
 	Fonction qui prédit si un mail représenté par un vecteur booléen `x` est un spam à partir
 	du modèle de paramètres `Psam`, `Pham`, `bspam`et `bham`.
@@ -89,8 +95,12 @@ def prediction(x: np.ndarray, Pspam: float, Pham: float, bspam: np.ndarray, bham
 	log_spam = np.log(Pspam) + np.sum(x * np.log(bspam) + ~x * np.log(1 - bspam))
 	log_ham  = np.log(Pham)  + np.sum(x * np.log(bham)  + ~x * np.log(1 - bham))
 
+	max_log = max(log_spam, log_ham)
+
+	prob_spam = np.exp(log_spam - max_log) / (np.exp(log_spam - max_log) + np.exp(log_ham - max_log))
+	prob_ham = np.exp(log_ham - max_log) / (np.exp(log_spam - max_log) + np.exp(log_ham - max_log))
 	
-	return log_spam > log_ham
+	return log_spam > log_ham, prob_spam, prob_ham
 	
 def test(dossier, isSpam, Pspam, Pham, bspam, bham):
 	"""
@@ -105,13 +115,13 @@ def test(dossier, isSpam, Pspam, Pham, bspam, bham):
 	en_tete = "SPAM" if isSpam else "HAM" # En-tête de message 
 
 	# Parcours des fichiers à tester
-	for fichier in fichiers:
+	for i, fichier in enumerate(fichiers):
 		# Ajout du nom de fichier dans message
 		nom =  f" {dossier}/{fichier} identifié comme un "
 
 		# Calcul de la prédiction :
 		x = lireMail(dossier + "/" + fichier, dictionnaire)
-		pred = prediction(x, Pspam, Pham, bspam, bham)
+		pred, prob_spam, prob_ham = prediction(x, Pspam, Pham, bspam, bham)
 		
 		# Ajout de la catégorie prédite dans le message :
 		categorie = "SPAM" if pred else "HAM"
@@ -122,7 +132,9 @@ def test(dossier, isSpam, Pspam, Pham, bspam, bham):
 			erreur = " *** erreur ***" # Ajout au message
 			erreurs += 1 # On ajoute l'erreur
 
-		print(en_tete + nom + categorie + erreur)
+		#print(en_tete + nom + categorie + erreur)
+		print(f"{en_tete} numéro {i} : P(Y=SPAM | X=x) = {prob_spam}, P(Y=HAM | X=x) = {prob_ham}", end = '')
+		print(f" ==> identifié comme un {categorie}{erreur}")
 
 	return erreurs / len(fichiers) # On retourne le taux d'erreur
 
@@ -173,4 +185,5 @@ if __name__ == "__main__":
 	print(f"Erreur de test sur {mTestHam} HAM 			: {erreurTestHam * 100:.0f} %")
 	print(f"Erreur de test globale sur {mTestSpam + mTestHam} mails		: {(erreurTestSpam * mTestSpam + erreurTestHam * mTestHam) / (mTestSpam + mTestHam) * 100:.0f} %")
 
-# TODO Modifier prediction qui semble bugger avant de passer à affinage
+# TODO Modifier prediction qui semble bugger avant de passer à affinage (DONE)
+# TODO Il manque l'encapsulation et la sauvegarde
