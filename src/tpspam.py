@@ -117,7 +117,7 @@ def prediction(x: np.ndarray, Pspam: float, Pham: float, bspam: np.ndarray, bham
 	
 	return log_spam > log_ham, prob_spam, prob_ham
 	
-def test(dossier: str, isSpam: bool, Pspam: float, Pham: float, bspam: np.ndarray, bham: np.ndarray) -> float:
+def test(dossier: str, isSpam: bool, Pspam: float, Pham: float, bspam: np.ndarray, bham: np.ndarray, trace: bool=False) -> float:
 	"""
 	Fonction qui test le classifieur de paramètres Pspam, Pham, bspam, bham 
 	sur tous les fichiers d'un dossier étiquetés comme SPAM si isSpam et HAM sinon
@@ -129,6 +129,7 @@ def test(dossier: str, isSpam: bool, Pspam: float, Pham: float, bspam: np.ndarra
 		Pham 	(float)		:
 		bspam 	(np.ndarray):
 		bham 	(np.ndarray):
+		trace 	(bool)		: Pour gérer affichage. Par défaut à False.
 
 	Returns:
 		float				: L'erreur de test.
@@ -155,9 +156,9 @@ def test(dossier: str, isSpam: bool, Pspam: float, Pham: float, bspam: np.ndarra
 			erreur = " *** erreur ***" # Ajout au message
 			erreurs += 1 # On ajoute l'erreur
 
-		#print(en_tete + nom + categorie + erreur)
-		print(f"{en_tete} numéro {i} : P(Y=SPAM | X=x) = {prob_spam}, P(Y=HAM | X=x) = {prob_ham}", end = '')
-		print(f" ==> identifié comme un {categorie}{erreur}")
+		if trace:
+			print(f"{en_tete} numéro {i} : P(Y=SPAM | X=x) = {prob_spam}, P(Y=HAM | X=x) = {prob_ham}", end = '')
+			print(f" ==> identifié comme un {categorie}{erreur}")
 
 	return erreurs / len(fichiers) # On retourne le taux d'erreur
 
@@ -291,7 +292,52 @@ if __name__ == "__main__":
 	print(f"Erreur de test sur {mTestHam} HAM 			: {erreurTestHam * 100:.0f} %")
 	print(f"Erreur de test globale sur {mTestSpam + mTestHam} mails		: {(erreurTestSpam * mTestSpam + erreurTestHam * mTestHam) / (mTestSpam + mTestHam) * 100:.0f} %")
 
+	# Comparaison avec / sans lissage : 
+	bspam_sans = np.zeros(len(dictionnaire))
+	for fichier in fichiersspams:
+		bspam_sans += lireMail(dossier_spams + "/" + fichier, dictionnaire)
+	bspam_sans /= mSpam
 
-# TODO : Faire un exemple avec et sans lissage via EPSILON
-# TODO : Tester l'export puis import d'un classifieur
-# TODO : Avec le classifieur importé, tester mise a jour avec apprentissage en ligne
+	bham_sans = np.zeros(len(dictionnaire))
+	for fichier in fichiershams:
+		bham_sans += lireMail(dossier_hams + "/" + fichier, dictionnaire)
+	bham_sans /= mHam
+
+	# On prend très petit nombre proche de 0 pour eviter log(0)
+	bspam_sans = np.clip(bspam_sans, 1e-10, 1 - 1e-10)
+	bham_sans = np.clip(bham_sans, 1e-10, 1 - 1e-10)
+
+	err_spam_sans = test(dossier_test_spams, True,  Pspam, Pham, bspam_sans, bham_sans, True)
+	err_ham_sans  = test(dossier_test_hams,  False, Pspam, Pham, bspam_sans, bham_sans, True)
+
+	print(f"SANS lissage - SPAM : {err_spam_sans * 100:.0f}%  |  HAM : {err_ham_sans * 100:.0f}%")
+	print(f"AVEC lissage - SPAM : {erreurTestSpam * 100:.0f}%  |  HAM : {erreurTestHam * 100:.0f}%")
+
+	# Import / export du classifieur
+
+	exporterClassifieur("mon_classifieur", classifieur)
+	classifieur_charge = importerClassifieur("mon_classifieur.pkl")
+
+	err_spam_charge = testClassifieur(dossier_test_spams, True, classifieur_charge)
+	err_ham_charge = testClassifieur(dossier_test_hams, False, classifieur_charge)
+
+	print(f"Vérification après import - SPAM : {err_spam_charge * 100:.0f}%  |  HAM : {err_ham_charge * 100:.0f}%")
+
+	# Apprentissage en ligne :
+	print(f"Avant mise à jour - mSpam : {classifieur_charge['mSpam']}, mHam : {classifieur_charge['mHam']}")
+	print(f"Avant mise à jour - Pspam : {classifieur_charge['Pspam']:.4f}, Pham : {classifieur_charge['Pham']:.4f}")
+
+	nouveau_spam = dossier_test_spams + "/" + fichiers_test_spams[0]
+	nouveau_ham = dossier_test_hams + "/" + fichiers_test_hams[0]
+
+	classifieur_charge = miseAJour(classifieur_charge, nouveau_spam, True)
+	classifieur_charge = miseAJour(classifieur_charge, nouveau_ham, False)
+
+	print(f"Après mise à jour - mSpam : {classifieur_charge['mSpam']}, mHam : {classifieur_charge['mHam']}")
+	print(f"Après mise à jour - Pspam : {classifieur_charge['Pspam']:.4f}, Pham : {classifieur_charge['Pham']:.4f}")
+ 
+	err_spam_maj = testClassifieur(dossier_test_spams, True,  classifieur_charge)
+	err_ham_maj  = testClassifieur(dossier_test_hams,  False, classifieur_charge)
+
+	print(f"Après mise à jour - SPAM : {err_spam_maj * 100:.0f}%  |  HAM : {err_ham_maj * 100:.0f}%")
+ 
