@@ -173,7 +173,7 @@ def testClassifieur(dossier: str, isSpam: bool, classifieur: dict) -> float:
 	Returns:
 		float: L'erreur de test.
 	"""
-	return test(dossier, isSpam, classifieur['Psmam'], classifieur['Pham'], classifieur['bspam'], classifieur['bham'])
+	return test(dossier, isSpam, classifieur['Pspam'], classifieur['Pham'], classifieur['bspam'], classifieur['bham'])
 
 def exporterClassifieur(nomFichier: str, classifieur: dict):
 	"""
