@@ -1,68 +1,76 @@
 import numpy as np
+import pickle
 import os
-import math
-
 import re
 
+# Définition des constantes 
 TAILLE_MIN_MOT = 3
 EPSILON = 1
 
 
-def lireMail(fichier: str, dictionnaire: list) -> np.ndarray :
+def lireMail(fichierMail: str, dictionnaire: list) -> np.ndarray :
 	"""
-	Fonction qui lit un fichier `fichier` et retourne un vecteur de booléens en fonction 
+	Fonction qui lit un fichier mail `fichierMail` et retourne un vecteur de booléens en fonction 
 	du dictionnaire.
 
 	Ex. 
-		Si le mot de coordonné i dans le dictionnaire `dictionnaire` est présent dans `fichier`
+		Si le mot de coordonné i dans le dictionnaire `dictionnaire` est présent dans `fichierMail`
 		alors x[i] = True, sinon x[i] = False
 
-	Returns:
-		np.ndarray: Le vecteur booléen d'appartenance
-	"""
-	f = open(fichier, "r",encoding="ascii", errors="surrogateescape")
+	Args:
+		fichierMail 	(str)	: Nom du fichier mail à lire.
+		dictionnaire 	(list)	: Dictionnaire utilisé pour création du vecteur x.
 
-	texte = f.read().upper()
-	mots = re.findall(r'\b[A-Z]+\b', texte) # cela ignore la ponctuation
+	Returns:
+		np.ndarray				: Le vecteur booléen d'appartenance
+	"""
+	f = open(fichierMail, "r",encoding="ascii", errors="surrogateescape")
 
 	# On extrait les mots du mail :
-	#mots = [mot.upper() for mot in f.read().split(" ")] # Mise en MAJ pour insensiblité à la casse
+	texte = f.read().upper() # Mise en MAJ pour insensiblité à la casse
+	f.close()
+	mots = re.findall(r'\b[A-Z]+\b', texte) # cela ignore la ponctuation
 
 	# Construction du vecteur :
 	x = np.isin(dictionnaire, mots) 
 	
-	f.close()
 	return x
 
-def charge_dico(fichier: str) -> list:
+def charge_dico(fichierDico: str) -> list:
 	"""
 	Fonction qui insert dans une liste `mots` tous les mots d'un fichier
-	`fichier` dictionnaire (.txt) donné en paramètre.
+	`fichierDico` dictionnaire (.txt) donné en paramètre.
 	Les mots de moins de 3 lettres sont ignorés.
 
 	Args:
-		fichier (str): Le chemin vers le fichier dictionnaire.
+		fichierDico (str)	: Le chemin vers le fichier dictionnaire.
 
 	Returns:
-		list: La liste de tous les mots du dictionnaire.
+		list				: La liste de tous les mots du dictionnaire.
 	"""
-	f = open(fichier, "r")
+	f = open(fichierDico, "r")
 	texte = f.read().upper()
+	f.close()
 
 	# On extrait les mots de 3 lettres au moins :
 	mots = [mot for mot in re.findall(r'\b[A-Z]+\b', texte) if len(mot) >= TAILLE_MIN_MOT] # Mise en MAJ pour insensibilité à la casse
 
 	print("Chargé " + str(len(mots)) + " mots dans le dictionnaire")
-	f.close()
+	
 	return mots[:-1]
 
 def apprendBinomial(dossier: str, fichiers: list, dictionnaire: list) -> np.ndarray:
 	"""
-	Fonction d'apprentissage d'une loi binomiale à partid es fichiers d'un dossier.
+	Fonction d'apprentissage d'une loi binomiale à partir des fichiers d'un dossier.
 	Retourne un vecteur b de paramètres qui, pour chaque j, calcul la fréquence d'apparition.
 
+	Args:
+		dossier 		(str)	: Nom du dossier dans lequel piocher les fichiers de la base d'apprentissage.
+		fichiers 		(list)	: Liste des fichiers d'apprentissage.
+		dictionnaire 	(list)	: Dictionnaire utilisé pour l'apprentissage.
+
 	Returns:
-		np.ndarray: Vecteur de paramètres
+		np.ndarray				: Vecteur de paramètres
 	"""
 	N = len(fichiers) # On récupère le nombre total de fichier dans la base
 
@@ -85,9 +93,16 @@ def prediction(x: np.ndarray, Pspam: float, Pham: float, bspam: np.ndarray, bham
 	Fonction qui prédit si un mail représenté par un vecteur booléen `x` est un spam à partir
 	du modèle de paramètres `Psam`, `Pham`, `bspam`et `bham`.
 
+	Args:
+		x 			(np.ndarray)	: Vecteur booléen représentant un mail.
+		Pspam 		(float)			:
+		Pham 		(float)			: 
+		bspam 		(np.ndarray)	:
+		bham 		(np.ndarray)	: 
 
 	Returns:
-		bool: True si le mail donné en paramètre est classé comme SPAM par le classifieur, False sinon
+		tuple[bool, float, float]: 	True si le mail donné en paramètre est classé comme SPAM par le classifieur, False sinon.
+									Renvoie aussi les proba calculées.
 	"""
 
 	# Pour éviter les problèmes numériques, on passe aux logs :
@@ -102,13 +117,21 @@ def prediction(x: np.ndarray, Pspam: float, Pham: float, bspam: np.ndarray, bham
 	
 	return log_spam > log_ham, prob_spam, prob_ham
 	
-def test(dossier, isSpam, Pspam, Pham, bspam, bham):
+def test(dossier: str, isSpam: bool, Pspam: float, Pham: float, bspam: np.ndarray, bham: np.ndarray) -> float:
 	"""
-		Test le classifieur de paramètres Pspam, Pham, bspam, bham 
-		sur tous les fichiers d'un dossier étiquetés 
-		comme SPAM si isSpam et HAM sinon
+	Fonction qui test le classifieur de paramètres Pspam, Pham, bspam, bham 
+	sur tous les fichiers d'un dossier étiquetés comme SPAM si isSpam et HAM sinon
 		
-		Retourne le taux d'erreur 
+	Args:
+		dossier (str)		: Le chemin du dossier sur lequel effectué le test.
+		isSpam 	(bool)		: Indique si l'on traite des SPAMs ou des HAMs
+		Pspam 	(float)		:
+		Pham 	(float)		:
+		bspam 	(np.ndarray):
+		bham 	(np.ndarray):
+
+	Returns:
+		float				: L'erreur de test.
 	"""
 	fichiers = os.listdir(dossier) # Initialisation de la liste des fichiers à parcourir
 	erreurs = 0 # Initialisation du compteur d'erreur
@@ -138,6 +161,78 @@ def test(dossier, isSpam, Pspam, Pham, bspam, bham):
 
 	return erreurs / len(fichiers) # On retourne le taux d'erreur
 
+def testClassifieur(dossier: str, isSpam: bool, classifieur: dict) -> float:
+	"""
+	Même fonction que test() mais avec encapsulation dans classifieur.
+
+	Args:
+		dossier 	(str)	: Le chemin du dossier sur lequel effectué le test.
+		isSpam 		(bool)	: Indique si l'on traite des SPAMs ou des HAMs
+		classifieur (dict)	: Le classifieur à tester.
+		
+	Returns:
+		float: L'erreur de test.
+	"""
+	return test(dossier, isSpam, classifieur['Psmam'], classifieur['Pham'], classifieur['bspam'], classifieur['bham'])
+
+def exporterClassifieur(nomFichier: str, classifieur: dict):
+	"""
+	Procédure qui sauvegarde un classifieur dans un fichier via Pickle.
+
+	Args:
+		nomFichier 	(str)	: Le nom que l'on souhaite donner au fichier.
+		classifieur (dict)	: Le classifieur à sauvegarder.
+	"""
+	with open(f"{nomFichier}.pkl", "wb") as f:
+		pickle.dump(classifieur, f)
+
+def importerClassifieur(cheminFichier: str) -> dict:
+	"""
+	Fonction qui charge un classifieur d'après un fichier de sauvegarde.
+
+	Args:
+		cheminFichier (str)	: Le chemin vers le fichier sauvegardant le classifieur.
+
+	Returns:
+		dict				: Le classifieur chargé.
+	"""
+	with open(cheminFichier, "rb") as f:
+		classifieur = pickle.load(f)
+
+	return classifieur
+
+def miseAJour(classifieur: dict, fichierMail: str, isSpam: bool) -> dict:
+	"""
+	Fonction qui applique l'apprentissage en ligne au classifieur donné
+	avec le contenu du fichier `fichierMail`.
+
+	Args:
+		classifieur (dict)	: Le classifieur que l'on met à jour.
+		fichierMail (str)	: Le fichier du mail à ajouter.
+		isSpam 		(bool)	: Indique si le fichier correspond à un SPAM ou un HAM.
+
+	Returns:
+		dict				: Le classifieur mis à jour.
+	"""
+	x = lireMail(fichierMail, classifieur['dico'])
+
+	if isSpam: # On met a jour les paramètres spam
+		m = classifieur['mSpam']
+		n = classifieur['bspam'] * (m + 2 * EPSILON) - EPSILON
+		classifieur['bspam'] = (n + x + EPSILON) / (m + 1 + 2 * EPSILON)
+		classifieur['mSpam'] += 1
+	else: # On met à jour les paramètres ham
+		m = classifieur['mHam']
+		n = classifieur['bham'] * (m + 2 * EPSILON) - EPSILON
+		classifieur['bham'] = (n + x + EPSILON) / (m + 1 + 2 * EPSILON)
+		classifieur['mHam'] += 1
+
+	# On met à jour les à priori
+	total = classifieur['mSpam'] + classifieur['mHam']
+	classifieur['Pspam'] = classifieur['mSpam'] / total
+	classifieur['Pham'] = classifieur['mHam'] / total
+
+	return classifieur
 
 ############ programme principal ############
 if __name__ == "__main__":
@@ -168,6 +263,17 @@ if __name__ == "__main__":
 
 	print(f"Probabilité à priori de SPAM : {Pspam}\nProbabilité à priori de HAM : {Pham}")
 
+	# Encapsulation (on met dans un dictionnaire tous les params + le dico)
+	classifieur = {
+		'Pspam': Pspam,
+		'Pham':  Pham,
+		'bspam': bspam,
+		'bham':  bham,
+		'mSpam': mSpam,  
+		'mHam':  mHam,
+		'dico':  dictionnaire
+	}
+
 
 	# Calcul des erreurs avec la fonction test():
 	dossier_test_spams = "utils/bases/basetest/spam"
@@ -185,5 +291,7 @@ if __name__ == "__main__":
 	print(f"Erreur de test sur {mTestHam} HAM 			: {erreurTestHam * 100:.0f} %")
 	print(f"Erreur de test globale sur {mTestSpam + mTestHam} mails		: {(erreurTestSpam * mTestSpam + erreurTestHam * mTestHam) / (mTestSpam + mTestHam) * 100:.0f} %")
 
-# TODO Modifier prediction qui semble bugger avant de passer à affinage (DONE)
-# TODO Il manque l'encapsulation et la sauvegarde
+
+# TODO : Faire un exemple avec et sans lissage via EPSILON
+# TODO : Tester l'export puis import d'un classifieur
+# TODO : Avec le classifieur importé, tester mise a jour avec apprentissage en ligne
