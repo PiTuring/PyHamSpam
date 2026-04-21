@@ -95,10 +95,10 @@ def prediction(x: np.ndarray, Pspam: float, Pham: float, bspam: np.ndarray, bham
 
 	Args:
 		x 			(np.ndarray)	: Vecteur booléen représentant un mail.
-		Pspam 		(float)			:
-		Pham 		(float)			: 
-		bspam 		(np.ndarray)	:
-		bham 		(np.ndarray)	: 
+		Pspam 		(float)			: Proba à priori SPAM
+		Pham 		(float)			: Proba à priori HAM
+		bspam 		(np.ndarray)	: Paramètres appris sur les SPAMs (fréquences)
+		bham 		(np.ndarray)	: Paramètres appris sur les HAMs (fréquences)
 
 	Returns:
 		tuple[bool, float, float]: 	True si le mail donné en paramètre est classé comme SPAM par le classifieur, False sinon.
@@ -292,6 +292,7 @@ if __name__ == "__main__":
 	print(f"Erreur de test sur {mTestHam} HAM 			: {erreurTestHam * 100:.0f} %")
 	print(f"Erreur de test globale sur {mTestSpam + mTestHam} mails		: {(erreurTestSpam * mTestSpam + erreurTestHam * mTestHam) / (mTestSpam + mTestHam) * 100:.0f} %")
 
+
 	# Comparaison avec / sans lissage : 
 	bspam_sans = np.zeros(len(dictionnaire))
 	for fichier in fichiersspams:
@@ -340,4 +341,97 @@ if __name__ == "__main__":
 	err_ham_maj  = testClassifieur(dossier_test_hams,  False, classifieur_charge)
 
 	print(f"Après mise à jour - SPAM : {err_spam_maj * 100:.0f}%  |  HAM : {err_ham_maj * 100:.0f}%")
+	
+	# Apprentissage en ligne sur plusieurs mails :
+
+	N_INIT = 300
+	N_MAX_HAM = 1200
+	PAS = 50
+
+	spams_init = fichiersspams[:N_INIT]
+	hams_init = fichiershams[:N_INIT]
+	bspam = apprendBinomial(dossier_spams, spams_init, dictionnaire)
+	bham = apprendBinomial(dossier_hams, hams_init, dictionnaire)
+	Pspam = N_INIT / (N_INIT + N_INIT)
+	Pham = 1 - Pspam
+	classifieur = {
+		'Pspam': Pspam,
+		'Pham':  Pham,
+		'bspam': bspam,
+		'bham':  bham,
+		'mSpam': N_INIT,
+		'mHam':  N_INIT,
+		'dico':  dictionnaire
+	}
+
+	def erreur_globale(classifieur, dossier_test_spams, dossier_test_hams):
+		fichiers_s = os.listdir(dossier_test_spams)
+		fichiers_h = os.listdir(dossier_test_hams)
+		erreurs_s = sum(
+			1 for f in fichiers_s
+			if not prediction(lireMail(dossier_test_spams + '/' + f, classifieur['dico']),
+							  classifieur['Pspam'], classifieur['Pham'],
+							  classifieur['bspam'], classifieur['bham'])[0]
+		)
+		erreurs_h = sum(
+			1 for f in fichiers_h
+			if prediction(lireMail(dossier_test_hams + '/' + f, classifieur['dico']),
+						  classifieur['Pspam'], classifieur['Pham'],
+						  classifieur['bspam'], classifieur['bham'])[0]
+		)
+		total = len(fichiers_s) + len(fichiers_h)
+		return erreurs_s / len(fichiers_s), erreurs_h / len(fichiers_h), (erreurs_s + erreurs_h) / total
  
+	err_s, err_h, err_g = erreur_globale(classifieur, dossier_test_spams, dossier_test_hams)
+
+	# Pour graphe
+	x_points = [0] # initial
+	errs_spam = [err_s * 100]
+	errs_ham = [err_h * 100]
+	errs_glob = [err_g * 100]
+
+	spams_restants = fichiersspams[N_INIT:]
+	hams_restants = fichiershams[N_INIT:N_MAX_HAM]
+	mails_a_ajouter = []
+	for s, h in zip(spams_restants, hams_restants):
+		mails_a_ajouter.append((dossier_spams + "/" + s, True))
+		mails_a_ajouter.append((dossier_hams + "/" + h, False))
+
+	for s in spams_restants[len(hams_restants):]:
+		mails_a_ajouter.append((dossier_spams + '/' + s, True))
+	for h in hams_restants[len(spams_restants):]:
+		mails_a_ajouter.append((dossier_hams  + '/' + h, False))
+
+	
+
+	for i, (chemin_mail, isSpam) in enumerate(mails_a_ajouter, start=1):
+		classifieur = miseAJour(classifieur, chemin_mail, isSpam)
+
+		# On met à jours les erreurs pour suivi
+		if i % PAS == 0 or i == len(mails_a_ajouter):
+			err_s, err_h, err_g = erreur_globale(classifieur, dossier_test_spams, dossier_test_hams)
+			x_points.append(i)
+			errs_spam.append(err_s * 100)
+			errs_ham.append(err_h  * 100)
+			errs_glob.append(err_g * 100)
+
+	# Affichage : 
+	import matplotlib.pyplot as plt
+ 
+	plt.figure(figsize=(10, 6))
+	plt.plot(x_points, errs_spam, marker='o', color='crimson',    label='Erreur SPAM')
+	plt.plot(x_points, errs_ham,  marker='s', color='steelblue',  label='Erreur HAM')
+	plt.plot(x_points, errs_glob, marker='^', color='darkorange', label='Erreur globale', linestyle='--')
+ 
+	plt.axvline(x=0, color='gray', linestyle=':', linewidth=1, label=f'Départ : {N_INIT} spams + {N_INIT} hams')
+ 
+	plt.title("Évolution du taux d'erreur - apprentissage en ligne", fontsize=14)
+	plt.xlabel("Nombre de mails ajoutés en ligne", fontsize=12)
+	plt.ylabel("Taux d'erreur (%)", fontsize=12)
+	tick_labels = [str(x) if i % 5 == 0 else '' for i, x in enumerate(x_points)]
+	plt.xticks(x_points, tick_labels, rotation=45)
+	plt.ylim(0, 100)
+	plt.legend()
+	plt.grid(True, linestyle='--', alpha=0.5)
+	plt.tight_layout()
+	plt.show()
