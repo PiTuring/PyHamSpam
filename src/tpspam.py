@@ -57,7 +57,7 @@ def charge_dico(fichierDico: str) -> list:
 
 	print("Chargé " + str(len(mots)) + " mots dans le dictionnaire")
 	
-	return mots[:-1]
+	return mots
 
 def apprendBinomial(dossier: str, fichiers: list, dictionnaire: list) -> np.ndarray:
 	"""

@@ -11,6 +11,7 @@ in pkgs.mkShell {
     numpy
     ty
     ty-check
+    matplotlib
   ];
   TY_OUTPUT_FORMAT = "concise";
 }
